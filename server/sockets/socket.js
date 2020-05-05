@@ -1,37 +1,54 @@
 const { io } = require('../server');
 
+const { Usuarios } = require('../classes/usuarios');
+const { crearMensaje } = require('../utilidades/utilidades.js');
+const usuarios = new Usuarios();
 
 io.on('connection', (client) => {
 
-    console.log('usuario conectado');
+    client.on('entrarChat', (data, callback) => {
 
-    client.emit('enviarMensaje', {
-        usuario: 'admin',
-        mensaje: 'wena mi compare'
-    });
+        if (!data.nombre || !data.sala) {
+            return callback({
+                error: true,
+                mensaje: 'El nombre y la sala es necesaria'
+            });
+        }
+        //unir al usuario a una sala
+        client.join(data.sala);
+        /* ------------------ */
+        let personas = usuarios.agregarPersona(client.id, data.nombre, data.sala);
 
+        let personaEntra = usuarios.getPersona(client.id);
+        //muestra todas las personas en el chat de manera asincrona 
+        client.broadcast.to(data.sala).emit('listaPersona', usuarios.getPersonaPorSala(data.sala));
+        /* ---------------------- */
+
+        callback(usuarios.getPersonaPorSala(data.sala));
+    })
+
+    client.on('crearMensaje', (data) => {
+        let persona = usuarios.getPersona(client.id);
+        let mensaje = crearMensaje(persona.nombre, data.mensaje);
+
+        client.broadcast.to(persona.sala).emit('crearMensaje', mensaje);
+    })
 
     client.on('disconnect', () => {
-        console.log('usuario desconectado');
-    }); //detecta si se desconecto el usuario
+        let personaBorrada = usuarios.borrarPersona(client.id);
 
-    //escuchar el cliente
-    client.on('enviarMensaje', (data, callback) => {
-        console.log(data);
+        //notifica cuando un usuairo se desconecto
+        client.broadcast.to(personaBorrada.sala).emit('crearMensaje', crearMensaje('Administrador', `${personaBorrada.nombre} salió`));
+        /*  ---------------------- */
 
-        client.broadcast.emit('enviarMensaje', data); //broadcast envia a todos los usuarios
-        /*
-                if (mensaje.usuario) {
-                    callback({
-                        resp: 'todo salio bien'
-                    });
-                } else {
-                    callback({
-                        resp: 'todo salio mal'
-                    });
-                } //callback es el a3er argumento realizado en el front-end
+        //muestra todas las personas en el chat de manera asincrona 
+        client.broadcast.to(personaBorrada.sala).emit('listaPersona', usuarios.getPersonaPorSala());
+        /* ---------------------- */
+    })
 
-         */
-    });
-
+    //mensaje privado
+    client.on('mensajePrivado', data => {
+        let persona = usuarios.getPersona(client.id);
+        client.broadcast.to(data.para).emit('mensajePrivado', crearMensaje(persona.nombre, data.mensaje)); //se añade to para añadir data.para
+    })
 }); //client tiene toda la informacion de la computadora que se conecto
